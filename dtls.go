@@ -9,7 +9,6 @@ package canopus
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-#include <internal/bio.h>
 
 extern int go_session_bio_write(BIO* bio, char* buf, int num);
 extern int go_session_bio_read(BIO* bio, char* buf, int num);
@@ -118,6 +117,7 @@ static int go_bio_create( BIO *b ) {
 	return 1;
 }
 
+#ifdef DONT_USE_INTERNAL
 static BIO_METHOD go_bio_method = {
 	BIO_TYPE_SOURCE_SINK,
 	"go dtls",
@@ -129,9 +129,24 @@ static BIO_METHOD go_bio_method = {
 	go_bio_create, // new
 	go_conn_bio_free // delete
 };
+#endif
+
+static BIO_METHOD *xgo_bio_method = 0;
 
 static BIO_METHOD* BIO_go() {
-	return &go_bio_method;
+	if (xgo_bio_method) {
+		return xgo_bio_method;
+	} else {
+		// FIXME: check the return codes...
+		BIO_METHOD *m = BIO_meth_new(BIO_TYPE_SOURCE_SINK, "go dtls");
+		BIO_meth_set_write(m, go_conn_bio_write);
+		BIO_meth_set_read(m, go_conn_bio_read);
+		BIO_meth_set_ctrl(m, go_bio_ctrl);
+		BIO_meth_set_create(m, go_bio_create);
+		BIO_meth_set_destroy(m, go_conn_bio_free);
+		xgo_bio_method = m;
+		return m;
+	}
 }
 
 static void set_proto_1_2(SSL_CTX *ctx) {
